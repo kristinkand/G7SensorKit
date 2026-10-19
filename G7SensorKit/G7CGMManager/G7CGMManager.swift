@@ -73,6 +73,8 @@ public class G7CGMManager: CGMManager {
     /// build may have left scheduled. Done on the first reading, when the
     /// delegate is known to be set.
     private var didRetractLegacySignalLoss = false
+    /// Trio: the unfinished-pairing alert is up; retracted at the next reading.
+    private var pairingUnfinishedAlertPending = false
 
     /// Sends readings to Dexcom Share while an account is signed in.
     private var shareUploader: G7ShareUploader?
@@ -829,6 +831,15 @@ extension G7CGMManager: G7SensorDelegate {
         }
     }
 
+    /// Trio: the sensor refused the key of a pairing whose Bluetooth bond never finished; the next connection
+    /// pairs again, and this time the app has to be open for it.
+    public func sensorPairingDidNotFinish(_ sensor: G7Sensor) {
+        logDeviceCommunication("The last pairing did not finish (its Bluetooth bond was never confirmed); the next connection pairs again, with the app open", type: .connection)
+        pairingUnfinishedAlertPending = true
+        issueLifecycleAlert(.pairingUnfinished)
+    }
+
+
     public func sensorDidInvalidateSharedKey(_ sensor: G7Sensor) {
         logDeviceCommunication("The saved sensor key is no longer accepted; the next connection will pair again.", type: .connection)
         mutateState { state in
@@ -1153,6 +1164,10 @@ extension G7CGMManager: G7SensorDelegate {
                 state.lastAuthenticationFailureDate = nil
             }
             retractLifecycleAlert(.connectionRefused)
+        }
+        if pairingUnfinishedAlertPending {
+            pairingUnfinishedAlertPending = false
+            retractLifecycleAlert(.pairingUnfinished)
         }
         if !didRetractLegacySignalLoss {
             didRetractLegacySignalLoss = true

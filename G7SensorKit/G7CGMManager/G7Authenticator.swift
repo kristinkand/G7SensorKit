@@ -111,6 +111,10 @@ final class G7Authenticator {
         /// Whether this run performed the EC-JPAKE exchange (as opposed to
         /// reusing a stored key).
         let didExchangeKeys: Bool
+        /// Trio: a fresh pairing whose Bluetooth bond the sensor never confirmed: it dropped the link after the
+        /// bond request. The key holds only if the system pairing went through; when it did not (on a watch, Trio
+        /// was in the background and no pairing request could show), the sensor discards it.
+        var bondUnconfirmed = false
     }
 
     /// Per-step response deadline for a reconnect. Short: the link is up and
@@ -159,6 +163,12 @@ final class G7Authenticator {
             } catch G7AuthenticatorError.linkLost {
                 self.report("Link dropped before authentication could start")
                 completion(.failure(G7AuthenticatorError.linkLost))
+            } catch G7AuthenticatorError.challengeMismatch where self.storedSharedKey != nil {
+                // Trio: not the code's fault: the sensor no longer holds the key the last pairing left.
+                self.report("Authentication failed: the sensor no longer accepts the saved key")
+                peripheral.setValueUpdateHandler(for: .authentication, handler: nil)
+                peripheral.setValueUpdateHandler(for: .certificate, handler: nil)
+                completion(.failure(G7AuthenticatorError.challengeMismatch))
             } catch {
                 self.report("Authentication failed: \(error)")
                 peripheral.setValueUpdateHandler(for: .authentication, handler: nil)
@@ -244,12 +254,13 @@ final class G7Authenticator {
         report("Running the certificate exchange (auth=\(status.authStatus) bond=\(status.bondStatus))")
         try exchangeCertificates(peripheral, authentication: authentication)
         try answerKeyChallenge(peripheral, authentication: authentication)
-        try finalizeAndBond(peripheral, authentication: authentication)
+        let bonded = try finalizeAndBond(peripheral, authentication: authentication)
 
         return Result(
             sharedKey: sharedKey,
             deviceName: peripheral.peripheral.name,
-            didExchangeKeys: didExchangeKeys
+            didExchangeKeys: didExchangeKeys,
+            bondUnconfirmed: !bonded
         )
     }
 
@@ -337,7 +348,9 @@ final class G7Authenticator {
         let bytes = Data(response)
         let base = bytes.startIndex
         guard try G7AES.encryptChallenge(challenge, key: sharedKey) == bytes[base + 1 ..< base + 9] else {
-            report("Challenge: the sensor's answer does not match our key")
+            report(storedSharedKey != nil
+                ? "Challenge: the sensor's answer does not match the saved key"
+                : "Challenge: the sensor's answer does not match the key from the pairing code")
             throw G7AuthenticatorError.challengeMismatch
         }
         report("Challenge: the sensor's answer verified")
@@ -439,7 +452,9 @@ final class G7Authenticator {
 
     // MARK: - Finalize
 
-    private func finalizeAndBond(_ peripheral: G7PeripheralManager, authentication: G7AuthMessageBuffer) throws {
+    /// - Returns: false when the sensor dropped the link before confirming the bond.
+    @discardableResult
+    private func finalizeAndBond(_ peripheral: G7PeripheralManager, authentication: G7AuthMessageBuffer) throws -> Bool {
         report("Finalizing")
         try peripheral.writeValue(Data([0x06, 0x1E]), for: .authentication, type: .withResponse)
         _ = try waitForAuthentication(authentication, prefix: 0x06, step: "finalize")
@@ -462,10 +477,15 @@ final class G7Authenticator {
         if let confirmation = confirmation {
             report("Bonded (\(confirmation.match.hexadecimalString))")
         } else if peripheral.peripheral.state != .connected {
-            report("The sensor dropped the link after the bond request; the key is installed and the next connection will use it")
+            // Trio: 2026-10-19, a watch with Trio in the background: no pairing request could show, the sensor
+            // dropped the link, and refused the key ten minutes later.
+            report("The sensor dropped the link after the bond request. The key holds only if the Bluetooth pairing "
+                + "went through; if not, the next connection finds it refused and pairs again")
+            return false
         } else {
             report("No bond confirmation arrived; continuing, since the handshake already succeeded")
         }
+        return true
     }
 
     // MARK: - Waiting
