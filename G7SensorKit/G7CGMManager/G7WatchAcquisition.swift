@@ -60,6 +60,8 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
     private var lodgedAt: Date?
     /// A hold-then-connect is running; its end lodges.
     private var holdPending = false
+    /// Ends the running hold now, which lodges at once.
+    private var endHold: (() -> Void)?
     /// A restored close is being settled: its looks lodge.
     private var settlingRestoredClose = false
     /// The one scan pass.
@@ -199,6 +201,24 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
         lastReadingAt = timestamp
     }
 
+    /// The app is leaving the screen. watchOS freezes it within seconds, a hold's end included, and with no
+    /// request standing nothing wakes it again (2026-10-20: readings taken with the app open at 06:51 and 07:49,
+    /// then frozen before the lodge, 34 minutes and more without a reading). Whatever the hold was waiting for,
+    /// the request goes in now: a connect into the sensor's tail only closes and is held again on the next wake.
+    func leavingScreen() {
+        let state = manager.activePeripheral?.state
+        if holdPending, let end = endHold {
+            watchLog("app leaving the screen — ending the hold, lodging now")
+            holdPending = false; endHold = nil
+            end()
+            if let p = manager.activePeripheral, p.state != .connected { lodge(p, why: "app leaving the screen") }
+            return
+        }
+        // lodged or scanning already, or a reading on the radio: its close relodges as ever
+        guard !lodged, !bootstrapPass, let p = manager.activePeripheral, state != .connected else { return }
+        lodge(p, why: "app leaving the screen")
+    }
+
     // MARK: - The request
 
     private func adopt(_ peripheral: CBPeripheral) {
@@ -221,10 +241,11 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
         }
         holdPending = true
         watchLog(String(format: "%@ · holding the process %.1f s past the sensor's tail, then a plain connect", why, wait))
-        holdProcess(reason: "G7 re-lodge after the sensor's tail", upTo: wait) { [weak self] systemEnded in
+        endHold = holdProcess(reason: "G7 re-lodge after the sensor's tail", upTo: wait) { [weak self] systemEnded in
             self?.queue.async {
-                guard let self else { return }
+                guard let self, self.holdPending else { return }
                 self.holdPending = false
+                self.endHold = nil
                 self.lodge(peripheral, why: systemEnded ? "hold ended by the system" : "hold over")
             }
         }

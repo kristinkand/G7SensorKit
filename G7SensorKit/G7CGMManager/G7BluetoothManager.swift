@@ -141,6 +141,8 @@ protocol G7AcquisitionArm: AnyObject {
     func noteReading(at timestamp: Date)
     /// Any wake: put acquisition right if a lost callback left nothing standing.
     func recheck()
+    /// The app is about to be frozen: no hold may stand between it and a lodged request.
+    func leavingScreen()
 }
 
 class G7BluetoothManager: NSObject {
@@ -284,6 +286,14 @@ class G7BluetoothManager: NSObject {
                 return
             }
             self.acquisitionArm?.recheck()
+        }
+    }
+
+    /// The app is leaving the screen; the watch's acquisition lodges its request before watchOS freezes it.
+    func appLeavingScreen() {
+        managerQueue.async {
+            guard self.delegate != nil, self.centralManager.state == .poweredOn else { return }
+            self.acquisitionArm?.leavingScreen()
         }
     }
 
