@@ -70,6 +70,11 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
     /// The last reading's sensor timestamp, for the 3-miss test. Seeded at launch from the
     /// manager's persisted `latestReadingTimestamp`.
     private var lastReadingAt: Date?
+    /// Misses count from here at the earliest: a request this manager never lodged can't have missed a burst.
+    /// Without it a fresh manager (a new untethered session) counted from the last reading its saved state knew,
+    /// 95 minutes earlier while the watch's reader had the slot, and went straight to a scan pass, which in the
+    /// background found nothing for 18 minutes (2026-10-20, 06:32 to 06:50).
+    private let startedAt = Date()
 
     init(manager: G7BluetoothManager) {
         self.manager = manager
@@ -98,7 +103,7 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
         adopt(peripheral)
         // Three bursts missed with a request standing: presume the identifier stale and scan once.
         // A pass restarts the count, so an absent sensor is scanned for once per three bursts.
-        let reference = [lastReadingAt, lastBootstrapAt].compactMap { $0 }.max()
+        let reference = [lastReadingAt, lastBootstrapAt, startedAt].compactMap { $0 }.max()
         let missed = G7WatchAcquisition.missedBursts(since: reference)
         if !bootstrapPass, peripheral.state != .connected, missed >= G7WatchAcquisition.missedBurstsBeforeBootstrap {
             if peripheral.state == .connecting { central.cancelPeripheralConnection(peripheral) }
@@ -116,6 +121,15 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
     func recheck() {
         let state = manager.activePeripheral.map { "\($0.state.rawValue)" } ?? "none"
         watchLog("recheck: lodged=\(lodged) hold=\(holdPending) bootstrap=\(bootstrapPass) peripheral=\(state)")
+        // The pass's timer only runs while the app does: a pass begun just before the app was suspended outlived
+        // its cap, and every wake was turned away meanwhile (2026-10-20, 06:32 to 06:50). The first wake past the
+        // cap ends it, which lodges the daemon-held connect again.
+        if bootstrapPass, let started = lastBootstrapAt,
+           Date().timeIntervalSince(started) > G7WatchAcquisition.bootstrapScanCap
+        {
+            endBootstrapPass(reason: "cap passed while the app was asleep")
+            return
+        }
         guard !bootstrapPass else { return }
         scan()
     }
