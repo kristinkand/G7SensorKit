@@ -362,6 +362,10 @@ public final class G7Sensor: G7BluetoothManagerDelegate {
         bluetoothManager.appLeavingScreen()
     }
 
+    func appBecameActive() {
+        bluetoothManager.appBecameActive()
+    }
+
     public func stopScanning() {
         bluetoothManager.disconnect()
     }

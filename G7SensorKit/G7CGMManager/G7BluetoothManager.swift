@@ -143,6 +143,8 @@ protocol G7AcquisitionArm: AnyObject {
     func recheck()
     /// The app is about to be frozen: no hold may stand between it and a lodged request.
     func leavingScreen()
+    /// The app is in front again.
+    func becameActive()
 }
 
 class G7BluetoothManager: NSObject {
@@ -286,6 +288,13 @@ class G7BluetoothManager: NSObject {
                 return
             }
             self.acquisitionArm?.recheck()
+        }
+    }
+
+    /// The app is in front: the watch's acquisition holds in the app and may run a scan pass again.
+    func appBecameActive() {
+        managerQueue.async {
+            self.acquisitionArm?.becameActive()
         }
     }
 

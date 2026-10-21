@@ -523,6 +523,11 @@ public class G7CGMManager: CGMManager {
         sensor.appLeavingScreen()
     }
 
+    /// The watch app is in front again: the acquisition waits out the sensor's tail in the app and may scan.
+    public func appBecameActive() {
+        sensor.appBecameActive()
+    }
+
     public func scanForNewSensor() {
         cancelSuspectedSessionEndScan()
         retractAllLifecycleAlerts()
