@@ -74,8 +74,10 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
     private var startDelayUnavailable = false
     /// The standing request carries a start delay.
     private var lodgedWithDelay = false
-    /// A restored close is being settled: its looks lodge.
-    private var settlingRestoredClose = false
+    /// A restored connect or close is being settled: its looks lodge.
+    private var settlingRestoredPeripheral = false
+    /// A plain connect refused as invalid is not asked for again on every wake (Elias Maurer, EJM0/G7SensorKit 283272a).
+    private var invalidConnectBlockedFor: UUID?
     /// The one scan pass.
     private var bootstrapPass = false
     private var bootstrapTimer: DispatchSourceTimer?
@@ -186,12 +188,24 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
         let sinceLodge = lodgedAt.map { Date().timeIntervalSince($0) } ?? .infinity
         lodgedAt = nil
         let code = (error as NSError?).map { "\($0.domain)#\($0.code) \($0.localizedDescription)" } ?? "no error"
-        if lodgedWithDelay, sinceLodge < G7WatchAcquisition.synchronousRefusalWindow {
-            // the option itself refused: once, then plain requests with the hold in the app as before
+        // CoreBluetooth refuses an option it won't take as invalid parameters, at once (xDrip4iOS 7.2.0; the
+        // error match and the per-sensor memory across relaunches from Elias Maurer, EJM0/G7SensorKit 283272a)
+        let isInvalidParameters = (error as NSError?).map {
+            $0.domain == CBErrorDomain && $0.code == CBError.invalidParameters.rawValue
+        } ?? false
+        if lodgedWithDelay, isInvalidParameters || sinceLodge < G7WatchAcquisition.synchronousRefusalWindow {
+            // the option itself refused: then plain requests with the hold in the app as before, for this sensor
             startDelayUnavailable = true
             lodgedWithDelay = false
-            watchLog("start delay refused (\(code)) — plain connects from here on")
+            UserDefaults.standard.set(true, forKey: Self.startDelayRefusedKey(peripheral.identifier))
+            watchLog("start delay refused (\(code)) — plain connects from here on, also after a relaunch")
             lodge(peripheral, why: "after the start delay was refused")
+            return true
+        }
+        if isInvalidParameters {
+            // a plain request refused the same way would be refused on every wake: wait for a new configuration
+            invalidConnectBlockedFor = peripheral.identifier
+            watchLog("plain connect refused as invalid (\(code)) — no more requests until the sensor or setup changes")
             return true
         }
         switch G7WatchAcquisition.onConnectFailure(sinceLodge: sinceLodge) {
@@ -323,37 +337,20 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
     /// a hold in the app. Ignored for an app in front, and after the daemon refused it once.
     private func lodge(_ peripheral: CBPeripheral, why: String, startDelay: TimeInterval = 0) {
         dispatchPrecondition(condition: .onQueue(queue))
-        guard central.state == .poweredOn, !lodged else { return }
+        guard central.state == .poweredOn, !lodged, invalidConnectBlockedFor != peripheral.identifier else { return }
         switch peripheral.state {
         case .connected:     return
         case .connecting:
             // Not ours (ours sets `lodged`): a restored request bluetoothd no longer held cost eight hours
-            // with no link (2026-09-16). Cancel it and lodge our own; the timer covers a silent cancel.
-            watchLog("restored as connecting with no request of ours — cancelling it and lodging a fresh connect")
-            central.cancelPeripheralConnection(peripheral)
-            let id = peripheral.identifier
-            queue.asyncAfter(deadline: .now() + 2) { [weak self] in
-                guard let self, !self.lodged,
-                      let p = self.central.retrievePeripherals(withIdentifiers: [id]).first else { return }
-                guard p.state != .disconnected else {
-                    self.lodge(p, why: "after cancelling a restored connect the daemon did not hold")
-                    return
-                }
-                guard p.state == .connecting else { return }
-                // The cancel went unanswered and the peripheral still reads as connecting (2026-10-16 23:16: the
-                // watch then read nothing until the phone took over). A connect on a connecting peripheral
-                // stands a request of ours either way.
-                self.lodged = true
-                self.lodgedAt = Date()
-                self.central.connect(p, options: nil)
-                self.watchLog("restored connect still pending 2 s after the cancel — lodged our own over it")
-            }
+            // with no link (2026-09-16). Cancel it and lodge our own, the process held meanwhile; a cancel that
+            // goes unanswered (2026-10-16 23:16) gets our own connect over it.
+            settleRestoredPeripheral(peripheral)
             return
         case .disconnecting:
             // Ours: the close callback lodges, as a connect issued during a cancel is lost inside CoreBluetooth.
             // Restored as disconnecting, the close is one this process never asked for and never hears of
             // (2026-10-18 23:45: every recheck and scan stopped here, no reading for 55 min until the app opened).
-            if linkUpAt == nil { settleRestoredClose(peripheral) }
+            if linkUpAt == nil { settleRestoredPeripheral(peripheral) }
             return
         default:             break
         }
@@ -366,6 +363,9 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
         }
         manager.setNeedsCodeForSensor(nil)
         lodged = true; lodgedAt = Date()
+        if !startDelayUnavailable, UserDefaults.standard.bool(forKey: Self.startDelayRefusedKey(peripheral.identifier)) {
+            startDelayUnavailable = true
+        }
         let delaySeconds = startDelayUnavailable ? 0 : Int(startDelay.rounded(.up))
         lodgedWithDelay = delaySeconds >= 1
         if lodgedWithDelay {
@@ -377,36 +377,46 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
         }
     }
 
-    /// A peripheral restored as disconnecting: cancel the close, then lodge once it reads disconnected; still
-    /// disconnecting at the second look, lodge our own over it. The process is held for the looks.
-    private func settleRestoredClose(_ peripheral: CBPeripheral) {
+    private static func startDelayRefusedKey(_ identifier: UUID) -> String {
+        "G7WatchAcquisition.startDelayRefused.\(identifier.uuidString)"
+    }
+
+    /// A peripheral restored as connecting or disconnecting, with no request of this process behind it: cancel it,
+    /// then lodge once it reads disconnected; still pending at the second look, lodge our own over it. The process
+    /// is held for both looks, so watchOS can't suspend it inside the cancel and leave nothing standing.
+    /// Connecting and disconnecting in one path: Elias Maurer, EJM0/G7SensorKit 513e28c.
+    private func settleRestoredPeripheral(_ peripheral: CBPeripheral) {
         dispatchPrecondition(condition: .onQueue(queue))
-        guard !settlingRestoredClose else { return }
-        settlingRestoredClose = true
-        watchLog("restored as disconnecting with no close of ours — cancelling it and lodging a fresh connect")
+        guard !settlingRestoredPeripheral else { return }
+        settlingRestoredPeripheral = true
+        let restoredState = peripheral.state == .connecting ? "connecting" : "disconnecting"
+        watchLog("restored as \(restoredState) with no request of ours — cancelling it and lodging a fresh connect")
         central.cancelPeripheralConnection(peripheral)
         let id = peripheral.identifier
-        let release = holdProcess(reason: "G7 settling a restored close", upTo: 10)
+        let release = holdProcess(reason: "G7 settling a restored connection", upTo: 10)
         func look(after delay: TimeInterval, last: Bool) {
             queue.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self else { return release() }
-                let finish = { self.settlingRestoredClose = false; release() }
+                let finish = { self.settlingRestoredPeripheral = false; release() }
                 // a close callback or a connect of its own came first
                 guard !self.lodged, let p = self.central.retrievePeripherals(withIdentifiers: [id]).first,
                       p.state != .connected
                 else { return finish() }
+                if !last, p.state == .connecting || p.state == .disconnecting {
+                    self.central.cancelPeripheralConnection(p)
+                    look(after: 5, last: true)
+                    return
+                }
                 switch p.state {
                 case .disconnected:
                     finish()
-                    self.lodge(p, why: "after cancelling a restored close")
-                case .disconnecting where !last:
-                    self.central.cancelPeripheralConnection(p)
-                    look(after: 5, last: true)
+                    self.lodge(p, why: "after cancelling a restored \(restoredState) peripheral")
                 default:
                     self.lodged = true
                     self.lodgedAt = Date()
+                    self.lodgedWithDelay = false
                     self.central.connect(p, options: nil)
-                    self.watchLog("restored close still pending after the cancel — lodged our own over it")
+                    self.watchLog("restored \(restoredState) peripheral still pending after the cancel — lodged our own over it")
                     finish()
                 }
             }
