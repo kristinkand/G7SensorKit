@@ -314,10 +314,10 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
             lodge(peripheral, why: "\(why) · nothing to wait for")
             return
         }
-        if !isForeground, !startDelayUnavailable {
-            lodge(peripheral, why: why, startDelay: wait)
-            return
-        }
+        // The start delay only hands over a hold the app is about to lose (`leavingScreen`). As the ordinary wait
+        // after every reading it cost readings: on 21/22 October the burst after a delayed request went unserved
+        // about once in 35 minutes (12:45, 15:00, 00:25, 00:40), against none in 8 hours with the hold on 19/20
+        // October.
         holdPending = true
         holdEndsAt = Date().addingTimeInterval(wait)
         watchLog(String(format: "%@ · holding the process %.1f s past the sensor's tail, then a plain connect", why, wait))
