@@ -1141,7 +1141,7 @@ extension G7CGMManager: G7SensorDelegate {
         case G7AuthenticatorError.rejected(_, .noAppKey):
             // Recovered unattended by the session; nothing for the user to do.
             return nil
-        case G7AuthenticatorError.rejected, G7AuthenticatorError.challengeMismatch, G7AuthenticatorError.unexpectedResponse:
+        case G7AuthenticatorError.rejected, G7AuthenticatorError.challengeMismatch, G7AuthenticatorError.unexpectedResponse, G7AuthenticatorError.storedKeyNotBonded:
             return String(describing: error)
         default:
             return nil

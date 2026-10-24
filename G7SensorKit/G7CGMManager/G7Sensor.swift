@@ -658,7 +658,8 @@ public final class G7Sensor: G7BluetoothManagerDelegate {
         let keyIsStale: Bool
         switch error {
         case G7AuthenticatorError.challengeMismatch,
-             G7AuthenticatorError.rejected(_, .noAppKey):
+             G7AuthenticatorError.rejected(_, .noAppKey),
+             G7AuthenticatorError.storedKeyNotBonded:
             keyIsStale = true
         default:
             keyIsStale = false
