@@ -154,7 +154,38 @@ public final class G7WatchAcquisition: G7AcquisitionArm {
             return
         }
         guard !bootstrapPass else { return }
+        // Trio: a request that stood through a whole burst without a link is lost, not waiting: on 26 October
+        // (02:21 to 02:35, Extended Untethered Mode) one stood 14 minutes while each wake found it "lodged" and left it.
+        // Renewed at the next wake after a missed burst; the watch's own reader does the same (Trio f18265694).
+        if lodged, !holdPending, let at = lodgedAt,
+           Date().timeIntervalSince(at) > G7WatchAcquisition.period + 90,
+           let peripheral = manager.activePeripheral, peripheral.state != .connected
+        {
+            renewStaleRequest(peripheral, after: Date().timeIntervalSince(at))
+            return
+        }
         scan()
+    }
+
+    /// Trio: withdraws a request that missed its burst and puts in a fresh one for the same sensor, held for the few
+    /// seconds that takes. Unlike `retryKnownSensor` it doesn't count as a scan pass.
+    private func renewStaleRequest(_ peripheral: CBPeripheral, after seconds: TimeInterval) {
+        watchLog(String(format: "lodged %.0f s ago without a link — cancelling and connecting afresh", seconds))
+        let release = holdProcess(reason: "G7 renewing a lost request", upTo: 4)
+        if peripheral.state == .connecting { central.cancelPeripheralConnection(peripheral) }
+        lodged = false; lodgedAt = nil
+        let id = peripheral.identifier
+        queue.asyncAfter(deadline: .now() + 2) { [weak self] in
+            defer { release() }
+            guard let self, !self.lodged, let p = self.central.retrievePeripherals(withIdentifiers: [id]).first else { return }
+            if p.state == .connecting {
+                self.lodged = true; self.lodgedAt = Date(); self.lodgedWithDelay = false
+                self.central.connect(p, options: nil)
+                self.watchLog("lost request still pending after the cancel — lodged our own over it")
+            } else {
+                self.lodge(p, why: "after a lost request")
+            }
+        }
     }
 
     func found(_ peripheral: CBPeripheral) {
