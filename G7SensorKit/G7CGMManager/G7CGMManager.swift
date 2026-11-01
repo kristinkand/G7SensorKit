@@ -526,6 +526,16 @@ public class G7CGMManager: CGMManager {
         sensor.recheckAcquisition()
     }
 
+    /// Trio: the watch app's scene phase. Next-dev's acquisition re-checks on every wake and no longer acts as the
+    /// app leaves the screen (Pete Schwamb, LoopKit/G7SensorKit#80), so leaving does nothing and coming to the front
+    /// is one more wake.
+    public func appLeavingScreen() {}
+
+    /// Trio: the watch app is in front again; a wake for the acquisition.
+    public func appBecameActive() {
+        sensor.recheckAcquisition()
+    }
+
     public func scanForNewSensor() {
         cancelSuspectedSessionEndScan()
         retractAllLifecycleAlerts()
