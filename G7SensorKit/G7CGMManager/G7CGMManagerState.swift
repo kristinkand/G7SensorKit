@@ -195,6 +195,10 @@ public struct G7CGMManagerState: RawRepresentable, Equatable {
         // Without a code it stands down until a new configuration brings one.
         if configuredByAnotherController {
             self.sessionMode = .direct
+            // Trio: always the secondary (watch) slot, as the fork had it. The fork worked the slot out from this
+            // flag and never saved it, so a watch session saved by the fork restored as .phone, took the phone's
+            // slot and was turned away by the sensor at every connection (1 November, 18:53 to 19:09).
+            self.displayType = .watch
         }
     }
 
