@@ -136,7 +136,7 @@ if viewModel.sessionMode == .eavesdropping {
                 }
             }
 
-            if viewModel.showsWatchDirectRead {
+            if viewModel.showsWatchDirectRead, viewModel.sessionMode == .eavesdropping {
                 watchDirectReadSection
             }
 
@@ -410,9 +410,8 @@ if viewModel.sessionMode == .eavesdropping {
     private var watchDirectReadSection: some View {
         Section(header: Text(LocalizedString("Apple Watch", comment: "Section title for the watch reading the G7 itself")),
                 footer: Text(LocalizedString("The watch reads this sensor itself, so readings continue on the watch when your phone isn't there. The watch takes the sensor's watch slot, so the Dexcom watch app can't read it at the same time.", comment: "Footer explaining the watch reading the G7 directly"))) {
-            Toggle(LocalizedString("Read on Apple Watch", comment: "Toggle for the watch reading the G7 directly"),
-                   isOn: Binding(get: { viewModel.watchDirectReadEnabled }, set: { viewModel.setWatchDirectReadEnabled($0) }))
-            if viewModel.watchDirectReadEnabled, viewModel.sessionMode == .eavesdropping {
+            // Trio: no Read on Apple Watch switch (see showsWatchDirectRead); the code is all the watch needs.
+            if viewModel.sessionMode == .eavesdropping {
                 LabeledValueView(label: LocalizedString("Pairing Code", comment: "Label for the pairing code status in the watch direct read section"), value: viewModel.watchPairingCodeStatusText)
                 HStack {
                     TextField(LocalizedString("4-digit code", comment: "Placeholder for the G7 pairing code entry for the watch"), text: $viewModel.watchPairingCodeEntry)

@@ -50,6 +50,7 @@
 		64F873CAFE778918BD2F749A /* G7EnterCodeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 854B2FDB6A6325716E4FD46D /* G7EnterCodeView.swift */; };
 		FADE0000000000000000032D /* Data.swift in Sources */ = {isa = PBXBuildFile; fileRef = C17F5137291EB0A800555EB5 /* Data.swift */; };
 		69AE26EEA16A596AA47DF83A /* G7DexcomAppWarningView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11ED0ADBD1E5197198A0B215 /* G7DexcomAppWarningView.swift */; };
+		9C660E0DD71336960C2FE396 /* HKUnit.swift in Sources */ = {isa = PBXBuildFile; fileRef = C17F514A291EB6F000555EB5 /* HKUnit.swift */; };
 		FADE00000000000000000324 /* TimeInterval.swift in Sources */ = {isa = PBXBuildFile; fileRef = C17F513F291EB27D00555EB5 /* TimeInterval.swift */; };
 		6F0232BD04ED7FD3626E0D52 /* G7ShareTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA54130B258935826428FB7C /* G7ShareTests.swift */; };
 		70DD3285A1241531F66439E3 /* G7DexcomCredentials.swift in Sources */ = {isa = PBXBuildFile; fileRef = 31D1424E75ED6303B966EF89 /* G7DexcomCredentials.swift */; };
@@ -909,6 +910,7 @@
 				FADE00000000000000000322 /* G7BackfillMessage.swift in Sources */,
 				FADE00000000000000000323 /* G7Opcode.swift in Sources */,
 				FADE00000000000000000324 /* TimeInterval.swift in Sources */,
+				9C660E0DD71336960C2FE396 /* HKUnit.swift in Sources */,
 				FADE00000000000000000325 /* G7CGMManagerState.swift in Sources */,
 				FADE00000000000000000326 /* CBPeripheral.swift in Sources */,
 				FADE00000000000000000327 /* ExtendedVersionMessage.swift in Sources */,

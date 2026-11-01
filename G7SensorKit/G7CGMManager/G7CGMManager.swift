@@ -712,16 +712,9 @@ extension G7CGMManager {
         guard let issue else {
             return
         }
-        let activationDate = sensor.activationDate ?? state.activatedAt
-        let event = PersistedCgmEvent(
-            date: activationDate?.addingTimeInterval(TimeInterval(message.glucoseTimestamp)) ?? Date(),
-            type: .sensorIssue,
-            deviceIdentifier: eventDeviceIdentifier(sensorID: sensorID),
-            error: CgmEventError(code: issue, isFatal: message.algorithmState.sensorFailed)
-        )
-        delegate.notify { delegate in
-            delegate?.cgmManager(self, hasNew: [event])
-        }
+        // Trio: its LoopKit has no `sensorIssue` event type (nor `CgmEventError`), so the issue goes to the log;
+        // the state above still drives the settings screen's temporary-issue row.
+        logDeviceCommunication("Sensor issue: \(issue)\(message.algorithmState.sensorFailed ? " (fatal)" : "")", type: .receive)
     }
 
     /// Closes the current sensor's session in Loop's CGM event history, once.
@@ -861,7 +854,7 @@ extension G7CGMManager: G7SensorDelegate {
                 let alert = Alert(identifier: Alert.Identifier(managerIdentifier: pluginIdentifier, alertIdentifier: "directRead.codeNeeded"),
                                   foregroundContent: content, backgroundContent: content, trigger: .immediate)
                 delegate.notify { delegate in
-                    Task { await delegate?.issueAlert(alert) }
+                    delegate?.issueAlert(alert)
                 }
             }
         }
@@ -1024,7 +1017,7 @@ extension G7CGMManager: G7SensorDelegate {
     private func calibrationSample(glucose: UInt16, date: Date) -> NewGlucoseSample {
         NewGlucoseSample(
             date: date,
-            quantity: LoopQuantity(unit: .milligramsPerDeciliter, doubleValue: Double(min(max(glucose, GlucoseLimits.minimum), GlucoseLimits.maximum))),
+            quantity: HKQuantity(unit: .milligramsPerDeciliter, doubleValue: Double(min(max(glucose, GlucoseLimits.minimum), GlucoseLimits.maximum))),
             condition: nil,
             trend: nil,
             trendRate: nil,
@@ -1383,8 +1376,8 @@ extension G7CGMManager: G7SensorDelegate {
                 isDisplayOnly: entry.glucoseIsDisplayOnly,
                 wasUserEntered: false,
                 syncIdentifier: generateSyncIdentifier(timestamp: entry.timestamp),
-                device: device,
-                isBackfill: true
+                device: device
+                // Trio: its LoopKit's NewGlucoseSample has no isBackfill tag
             )
         }
 
@@ -1459,5 +1452,10 @@ extension G7CGMManager: DeviceConfigurationSharing {
 
     /// The user's Read on Apple Watch setting.
     public var isConfigurationSharingEnabled: Bool { isWatchDirectReadEnabled }
+
+    /// Trio: its LoopKit's DeviceConfigurationSharing still requires this (next-dev dropped it in ba4d7f6).
+    public var isConfiguredByAnotherController: Bool {
+        state.configuredByAnotherController
+    }
 
 }

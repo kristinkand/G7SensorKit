@@ -166,11 +166,10 @@ class G7SettingsViewModel: ObservableObject {
 
     // MARK: - Watch direct read
 
-    /// Offered when the app supports it and a paired watch has the app installed, or while it is on;
-    /// otherwise the screen is unchanged.
+    /// Offered when a paired watch has the app installed; otherwise the screen is unchanged.
+    /// Trio: its LoopKit has no `supportsWatchDirectRead(for:)`, and Trio hands the sensor to its watch whenever
+    /// the watch takes over, so the section is the fork's: the pairing code, no Read on Apple Watch switch.
     var showsWatchDirectRead: Bool {
-        guard cgmManager.cgmManagerDelegate?.supportsWatchDirectRead(for: cgmManager) == true else { return false }
-        if watchDirectReadEnabled { return true }
         guard WCSession.isSupported() else { return false }
         let session = WCSession.default
         return session.activationState == .activated && session.isPaired && session.isWatchAppInstalled
