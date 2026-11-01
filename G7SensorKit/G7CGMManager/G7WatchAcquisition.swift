@@ -154,7 +154,7 @@ final class G7WatchAcquisition: G7AcquisitionArm {
             defer { release() }
             guard let self, !self.lodged, let p = self.central.retrievePeripherals(withIdentifiers: [id]).first else { return }
             if p.state == .connecting {
-                self.lodged = true; self.lodgedAt = Date(); self.lodgedWithDelay = false
+                self.lodged = true; self.lodgedAt = Date()
                 self.central.connect(p, options: nil)
                 self.watchLog("lost request still pending after the cancel — lodged our own over it")
             } else {
