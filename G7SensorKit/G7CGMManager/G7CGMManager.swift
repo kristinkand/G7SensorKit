@@ -840,8 +840,13 @@ extension G7CGMManager: G7SensorDelegate {
         let shouldSwitchToNewSensor = true
         // While eavesdropping, a held code was for another controller, and it belonged to the sensor
         // just replaced: it goes, and the user is asked for the new one while it is in hand.
-        let watchCodeToReplace = !state.configuredByAnotherController && state.sessionMode == .eavesdropping
-            && state.pairingCode != nil && state.sensorID != name
+        let newEavesdroppedSensor = !state.configuredByAnotherController && state.sessionMode == .eavesdropping
+            && state.sensorID != name
+        let watchCodeToReplace = newEavesdroppedSensor && state.pairingCode != nil
+        // Asked for too when the code is already gone: "New Sensor" in the settings (`scanForNewSensor`)
+        // drops it before the new sensor shows, and the watch was then left without a code and without a
+        // word (8 November, third tester: the watch could not pair the new sensor however often it tried).
+        let watchCodeNeeded = newEavesdroppedSensor && (state.pairingCode != nil || state.watchDirectReadEnabled)
 
         if shouldSwitchToNewSensor {
             sensor.cancelPendingCalibration()
@@ -864,7 +869,7 @@ extension G7CGMManager: G7SensorDelegate {
             }
             recordPendingSensorStart()
             scheduleSessionTimedAlerts()
-            if watchCodeToReplace {
+            if watchCodeNeeded {
                 let content = Alert.Content(
                     title: String(format: LocalizedString("New Sensor %1$@", comment: "Alert title asking for a new G7's pairing code for the watch (1: sensor name)"), name),
                     body: LocalizedString("Enter its pairing code in the Dexcom G7 settings so the watch can read it without your phone. The code is shown in the Dexcom app.", comment: "Alert body asking for a new G7's pairing code for the watch"),
