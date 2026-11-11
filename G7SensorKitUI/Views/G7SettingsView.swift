@@ -320,7 +320,7 @@ struct G7SettingsView: View {
     /// so the watch needs it entered here; reading directly, the phone's own code goes with the sensor.
     private var watchDirectReadSection: some View {
         Section(header: Text(LocalizedString("Apple Watch", comment: "Section title for the watch reading the G7 itself")),
-                footer: Text(LocalizedString("The watch reads this sensor itself, so readings continue on the watch when your phone isn't there. The watch takes the sensor's watch slot, so the Dexcom watch app can't read it at the same time.", comment: "Footer explaining the watch reading the G7 directly"))) {
+                footer: Text(watchDirectReadFooter)) {
             Toggle(LocalizedString("Read on Apple Watch", comment: "Toggle for the watch reading the G7 directly"),
                    isOn: Binding(get: { viewModel.watchDirectReadEnabled }, set: { viewModel.setWatchDirectReadEnabled($0) }))
             if viewModel.watchDirectReadEnabled, viewModel.sessionMode == .eavesdropping {
@@ -333,6 +333,14 @@ struct G7SettingsView: View {
                 }
             }
         }
+    }
+
+    /// Reading directly, Trio passes the sensor to its watch whatever this switch says, so the footer says so.
+    private var watchDirectReadFooter: String {
+        let footer = LocalizedString("The watch reads this sensor itself, so readings continue on the watch when your phone isn't there. The watch takes the sensor's watch slot, so the Dexcom watch app can't read it at the same time.", comment: "Footer explaining the watch reading the G7 directly")
+        guard viewModel.sessionMode == .direct else { return footer }
+        let direct = LocalizedString("With G7 direct this switch has no effect: Trio passes the sensor to its watch whenever the phone reads it directly.", comment: "Footer note: reading directly, the host app passes the sensor to its watch regardless of the switch")
+        return footer + "\n\n" + direct
     }
 
     private var calibrationSection: some View {
