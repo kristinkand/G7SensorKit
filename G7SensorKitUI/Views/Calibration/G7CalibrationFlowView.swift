@@ -9,10 +9,8 @@ import G7SensorKit
 import LoopKitUI
 import SwiftUI
 
-/// Calibration in three pages the first time: whether it is a good idea at
-/// all, how to do it properly, then the value. Once left — cancelled or
-/// continued past — later calibrations skip straight to the entry page,
-/// and the how-to stays reachable from the "How to Calibrate" pill there.
+/// Calibration: the why, how and after advice the first time, then
+/// straight to the entry page once it has been reached.
 struct G7CalibrationFlowView: View {
     @ObservedObject var viewModel: G7SettingsViewModel
 
@@ -30,28 +28,20 @@ struct G7CalibrationFlowView: View {
                 }
             }
             .navigationBarItems(leading: Button(LocalizedString("Cancel", comment: "Button text to cancel G7 setup")) {
-                // Cancelling out of the advice counts as having been shown
-                // it, the same as reading through to the end: marking this
-                // on an explicit exit, not on mere appearance, is what keeps
-                // a sheet nobody ever acted on from counting as "seen."
-                viewModel.markCalibrationAdviceSeen()
                 dismiss()
             })
         }
     }
 }
 
-/// Page 1 of the first-time advice: whether calibrating is a good idea at
-/// all. The sensor trails blood glucose by several minutes, so a
-/// calibration taken while glucose is moving teaches it the wrong value;
-/// and every reading Loop doses on shifts with it.
+/// Page 1 of the first-time advice: whether to calibrate at all.
 struct G7CalibrationWhyView: View {
     @ObservedObject var viewModel: G7SettingsViewModel
     var didFinish: () -> Void
 
     var body: some View {
         ScrollView {
-            G7CalibrationWhyContent()
+            G7CalibrationWhyContent(sensorName: viewModel.sensorModel.displayName)
                 .padding()
         }
         .safeAreaInset(edge: .bottom) {
@@ -67,6 +57,8 @@ struct G7CalibrationWhyView: View {
 }
 
 private struct G7CalibrationWhyContent: View {
+    var sensorName: String
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 12) {
@@ -78,7 +70,7 @@ private struct G7CalibrationWhyContent: View {
                     .fontWeight(.semibold)
             }
 
-            Text(LocalizedString("The G7 is factory calibrated and does not need calibrating. Calibrating tells the sensor to trust your meter over itself, so it is only worth doing when a small, steady offset has been there for hours and you have confirmed it with more than one fingerstick.", comment: "Calibration advice: calibration is optional"))
+            Text(String(format: LocalizedString("The %@ is factory calibrated and does not need calibrating. Calibrating tells the sensor to trust your meter over itself, so it is only worth doing when a small, steady offset has been there for hours and you have confirmed it with more than one fingerstick.", comment: "Calibration advice: calibration is optional (1: sensor model, e.g. G7)"), sensorName))
                 .fixedSize(horizontal: false, vertical: true)
 
             calibrationAdviceRow(
@@ -90,16 +82,36 @@ private struct G7CalibrationWhyContent: View {
     }
 }
 
-/// Page 2 of the first-time advice, and the "How to Calibrate" reference
-/// reachable later: the practical checklist for a calibration that is
-/// actually worth sending.
+/// Page 2 of the first-time advice: how to calibrate well.
 struct G7CalibrationHowView: View {
     @ObservedObject var viewModel: G7SettingsViewModel
     var didFinish: () -> Void
 
     var body: some View {
         ScrollView {
-            G7CalibrationHowContent(viewModel: viewModel)
+            G7CalibrationHowContent()
+                .padding()
+        }
+        .safeAreaInset(edge: .bottom) {
+            NavigationLink(destination: G7CalibrationAfterView(viewModel: viewModel, didFinish: didFinish)) {
+                Text(LocalizedString("Continue", comment: "Button title to continue"))
+                    .actionButtonStyle(.primary)
+            }
+            .padding()
+            .background(Color(.systemBackground))
+        }
+        .navigationBarTitle(Text(LocalizedString("How to Calibrate", comment: "Calibration how-page: navigation title and header text")), displayMode: .inline)
+    }
+}
+
+/// Page 3 of the first-time advice: what happens once it is entered.
+struct G7CalibrationAfterView: View {
+    @ObservedObject var viewModel: G7SettingsViewModel
+    var didFinish: () -> Void
+
+    var body: some View {
+        ScrollView {
+            G7CalibrationAfterContent()
                 .padding()
         }
         .safeAreaInset(edge: .bottom) {
@@ -110,40 +122,41 @@ struct G7CalibrationHowView: View {
             .padding()
             .background(Color(.systemBackground))
         }
-        .navigationBarTitle(Text(LocalizedString("How to Calibrate", comment: "Calibration how-page: navigation title, header text, and pill button")), displayMode: .inline)
+        .navigationBarTitle(Text(LocalizedString("After You Calibrate", comment: "Calibration after-page: navigation title and header text")), displayMode: .inline)
     }
 }
 
-/// Reopens the how-to page on demand, once it is no longer shown
-/// automatically, via the "How to Calibrate" pill on the entry page.
-struct G7CalibrationHowToCalibrateView: View {
-    @ObservedObject var viewModel: G7SettingsViewModel
+/// The full advice, why, how and after on one sheet, opened from the entry page.
+struct G7CalibrationAdviceSheet: View {
+    var sensorName: String
     var didFinish: () -> Void
 
     var body: some View {
         NavigationView {
             ScrollView {
-                G7CalibrationHowContent(viewModel: viewModel)
-                    .padding()
+                VStack(alignment: .leading, spacing: 32) {
+                    G7CalibrationWhyContent(sensorName: sensorName)
+                    Divider()
+                    G7CalibrationHowContent()
+                    Divider()
+                    G7CalibrationAfterContent()
+                }
+                .padding()
             }
-            .navigationBarTitle(Text(LocalizedString("How to Calibrate", comment: "Calibration how-page: navigation title, header text, and pill button")), displayMode: .inline)
+            .navigationBarTitle(Text(LocalizedString("Before You Calibrate", comment: "Navigation title of the full calibration advice sheet")), displayMode: .inline)
             .navigationBarItems(trailing: Button(LocalizedString("Done", comment: "Button to dismiss a sheet")) { didFinish() })
         }
     }
 }
 
 private struct G7CalibrationHowContent: View {
-    @ObservedObject var viewModel: G7SettingsViewModel
-
-    @Environment(\.guidanceColors) private var guidanceColors
-
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 12) {
                 Image(systemName: "checklist")
                     .font(.largeTitle)
                     .foregroundColor(.accentColor)
-                Text(LocalizedString("How to Calibrate", comment: "Calibration how-page: navigation title, header text, and pill button"))
+                Text(LocalizedString("How to Calibrate", comment: "Calibration how-page: navigation title and header text"))
                     .font(.title2)
                     .fontWeight(.semibold)
             }
@@ -171,26 +184,44 @@ private struct G7CalibrationHowContent: View {
                 title: LocalizedString("Fingersticks only", comment: "Calibration advice heading: fingersticks only"),
                 body: LocalizedString("Calibrate only with a blood glucose meter, and enter the value within five minutes of the test. Never calibrate from another CGM's reading.", comment: "Calibration advice: fingersticks only")
             )
-
-            if let stabilityNote = stabilityNote {
-                Label(stabilityNote, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundColor(guidanceColors.warning)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
         }
-    }
-
-    /// Whether the last reading says now is a bad moment.
-    private var stabilityNote: String? {
-        guard let trend = viewModel.lastTrendMgdlPerMinute else { return nil }
-        if abs(trend) >= 1 {
-            return LocalizedString("Your glucose is changing right now. Wait until the trend is flat.", comment: "Calibration advice warning: trend is not flat")
-        }
-        return nil
     }
 }
 
-/// One icon + title + body row, shared by the why and how advice pages.
+private struct G7CalibrationAfterContent: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(spacing: 12) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.largeTitle)
+                    .foregroundColor(.accentColor)
+                Text(LocalizedString("After You Calibrate", comment: "Calibration after-page: navigation title and header text"))
+                    .font(.title2)
+                    .fontWeight(.semibold)
+            }
+
+            calibrationAdviceRow(
+                icon: "antenna.radiowaves.left.and.right",
+                title: LocalizedString("Sent at the next reading", comment: "Calibration advice heading: when it is sent"),
+                body: LocalizedString("The sensor connects for a few seconds about every five minutes, and the calibration goes with the next connection. If the sensor has not connected within five minutes, the calibration is dropped and you can enter it again. Until it is sent you can cancel it from the settings screen.", comment: "Calibration advice: when it is sent")
+            )
+
+            calibrationAdviceRow(
+                icon: "xmark.circle",
+                title: LocalizedString("The sensor may refuse it", comment: "Calibration advice heading: refusals"),
+                body: LocalizedString("The sensor checks every calibration and can turn one down, for example when the value is too far from its own reading. The settings screen shows whether it was accepted and, if not, why.", comment: "Calibration advice: refusals")
+            )
+
+            calibrationAdviceRow(
+                icon: "chart.line.uptrend.xyaxis",
+                title: LocalizedString("Readings adjust gradually", comment: "Calibration advice heading: applying"),
+                body: LocalizedString("Once accepted, the sensor applies the calibration over the next couple of readings, so the change does not show at once. Do not calibrate again to chase it.", comment: "Calibration advice: applying")
+            )
+        }
+    }
+}
+
+/// One icon + title + body row, shared by the advice pages.
 private func calibrationAdviceRow(icon: String, title: String, body: String) -> some View {
     HStack(alignment: .top, spacing: 12) {
         Image(systemName: icon)
@@ -216,7 +247,7 @@ struct G7CalibrationEntryView: View {
 
     @State private var text = ""
     @State private var showingLargeDifferenceWarning = false
-    @State private var showingHowToCalibrate = false
+    @State private var showingAdvice = false
     @FocusState private var fieldFocused: Bool
 
     /// Difference from the sensor at which the warning steps in (mg/dL).
@@ -235,6 +266,18 @@ struct G7CalibrationEntryView: View {
     private var differenceMgdl: Double? {
         guard let entered = enteredMgdl, let current = viewModel.lastGlucoseMgdl else { return nil }
         return entered - current
+    }
+
+    /// Reasons now is a bad moment to calibrate.
+    private var warnings: [String] {
+        var warnings: [String] = []
+        if let trend = viewModel.lastTrendMgdlPerMinute, abs(trend) >= 1 {
+            warnings.append(LocalizedString("Your glucose is changing right now. Wait until the trend is flat.", comment: "Calibration advice warning: trend is not flat"))
+        }
+        if let activatedAt = viewModel.activatedAt, Date().timeIntervalSince(activatedAt) < .hours(24) {
+            warnings.append(LocalizedString("This sensor is less than a day old, and its readings may still be settling.", comment: "Calibration entry warning: sensor in its first day"))
+        }
+        return warnings
     }
 
     var body: some View {
@@ -268,9 +311,9 @@ struct G7CalibrationEntryView: View {
                 }
             } footer: {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text(LocalizedString("The sensor connects for a few seconds around each reading, so the calibration is sent at the next one, within about five minutes. Until then you can cancel it from the settings screen.", comment: "Calibration entry footer: when the value is sent"))
-                    Button(action: { showingHowToCalibrate = true }) {
-                        Label(LocalizedString("How to Calibrate", comment: "Calibration how-page: navigation title, header text, and pill button"), systemImage: "questionmark.circle.fill")
+                    Text(String(format: LocalizedString("The %@ is factory calibrated. Calibrate only when glucose is steady.", comment: "Calibration entry: caution shown every time (1: sensor model, e.g. G7)"), viewModel.sensorModel.displayName))
+                    Button(action: { showingAdvice = true }) {
+                        Label(LocalizedString("Read Before Calibrating", comment: "Button on the calibration entry page that opens the full advice"), systemImage: "info.circle.fill")
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
@@ -278,8 +321,31 @@ struct G7CalibrationEntryView: View {
             }
         }
         .insetGroupedListStyle()
-        .sheet(isPresented: $showingHowToCalibrate) {
-            G7CalibrationHowToCalibrateView(viewModel: viewModel, didFinish: { showingHowToCalibrate = false })
+        .sheet(isPresented: $showingAdvice) {
+            G7CalibrationAdviceSheet(sensorName: viewModel.sensorModel.displayName, didFinish: { showingAdvice = false })
+        }
+        .safeAreaInset(edge: .bottom) {
+            // On the page background, just above the Calibrate bar.
+            if !warnings.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(warnings, id: \.self) { warning in
+                        Label {
+                            Text(warning)
+                        } icon: {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(guidanceColors.warning)
+                        }
+                        .font(.subheadline)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(12)
+                        .background(guidanceColors.warning.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 8)
+                .background(Color(.systemGroupedBackground))
+            }
         }
         .safeAreaInset(edge: .bottom) {
             Button(action: submitTapped) {
@@ -292,10 +358,7 @@ struct G7CalibrationEntryView: View {
         }
         .onAppear {
             fieldFocused = true
-            // Reaching this page at all — including via VoiceOver or Voice
-            // Control activation, which a tap gesture on the "Continue" link
-            // would not see — is what "got through the advice" means; a
-            // no-op when already seen (the usual, direct-entry case).
+            // Reaching this page is what counts as having read the advice.
             viewModel.markCalibrationAdviceSeen()
         }
         .alert(

@@ -530,10 +530,19 @@ public class G7CGMManager: CGMManager {
     }
 
     public func scanForNewSensor() {
+        forgetSensor(reason: .replaced)
+    }
+
+    private func forgetSensor(reason: G7SensorRecord.EndReason) {
         cancelSuspectedSessionEndScan()
-        retractAllLifecycleAlerts()
+        if reason == .failed {
+            // The failure alert stays up until a new sensor is adopted.
+            G7LifecycleAlert.allCases.filter { $0 != .sensorFailed }.forEach(retractLifecycleAlert)
+        } else {
+            retractAllLifecycleAlerts()
+        }
         recordSensorEndIfNeeded()
-        archiveCurrentSensor(reason: .replaced)
+        archiveCurrentSensor(reason: reason)
 
         logDeviceCommunication("Forgetting existing sensor and starting scan for new sensor.", type: .connection)
 
@@ -580,21 +589,11 @@ public class G7CGMManager: CGMManager {
         mutateState { $0.simulatedSensorWarningSuppressed = true }
     }
 
-    /// Record that the calibration advice page has been shown, so later
+    /// Record that the calibration advice has been read, so later
     /// calibrations skip straight to the entry page.
     public func markCalibrationAdviceSeen() {
         mutateState { $0.calibrationAdviceSeen = true }
     }
-
-    #if targetEnvironment(simulator)
-    /// Simulator-only: forget that the calibration advice page has been
-    /// shown, so the first-time flow can be tested again without a fresh
-    /// pairing. `#if DEBUG` alone would still ship this to real phones,
-    /// since Trio's own builds are commonly Debug configuration.
-    public func resetCalibrationAdviceSeen() {
-        mutateState { $0.calibrationAdviceSeen = false }
-    }
-    #endif
 
     public func logDeviceCommunication(_ message: String, type: DeviceLogEntryType = .send) {
         self.cgmManagerDelegate?.deviceManager(self, logEventForDeviceIdentifier: state.sensorID, type: type, message: message, completion: nil)
@@ -835,7 +834,19 @@ extension G7CGMManager {
 
 extension G7CGMManager: G7SensorDelegate {
     public func sensor(_ sensor: G7Sensor, didDiscoverNewSensor name: String, activatedAt: Date, peripheralIdentifier: UUID) -> Bool {
+        // A failed or ended sensor keeps advertising, and the scan for its replacement finds it again.
+        if let previous = state.previousSensor, previous.endReason.isFinal, previous.sensorID == name,
+           let previousActivation = previous.activatedAt, abs(previousActivation.timeIntervalSince(activatedAt)) < .minutes(1) {
+            logDeviceCommunication("Ignoring \(name): its session already ended (\(previous.endReason.rawValue))", type: .connection)
+            return false
+        }
+
         logDeviceCommunication("New sensor \(name) discovered, activated at \(activatedAt)", type: .connection)
+
+        if let failedSensor = state.sensorFailedAlertIssuedFor, failedSensor != name {
+            retractLifecycleAlert(.sensorFailed)
+            mutateState { $0.sensorFailedAlertIssuedFor = nil }
+        }
 
         let shouldSwitchToNewSensor = true
         // While eavesdropping, a held code was for another controller, and it belonged to the sensor
@@ -1277,12 +1288,12 @@ extension G7CGMManager: G7SensorDelegate {
 
         if message.algorithmState.sensorFailed {
             logDeviceCommunication("Detected failed sensor... scanning for new sensor.", type: .receive)
-            scanForNewSensor()
+            forgetSensor(reason: .failed)
         }
 
         if message.algorithmState == .known(.sessionEnded) {
             logDeviceCommunication("Detected session ended... scanning for new sensor.", type: .receive)
-            scanForNewSensor()
+            forgetSensor(reason: .sessionEnded)
         }
 
 
